@@ -10,7 +10,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # --- Configuration ---
 FSSH_URL = "https://www.fssh.khc.edu.tw/home"
-DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1525418350761742446/SF12GWts1jKb5zBJoNr_4H7SnzMiJCFjtbYUm1CgdbUEZsRAxfhN3eyn-hsd2lXADkeQ"
+DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 BUCKET_NAME = "gemini-cli-storage-581039"
 LAST_TITLE_FILE_NAME = "last_title.txt"
 
