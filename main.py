@@ -3,52 +3,76 @@ import logging
 from playwright.sync_api import sync_playwright
 import requests
 
+# 設定日誌格式
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+# 從環境變數讀取 Webhook
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 FILE_NAME = "last_title.txt"
 
 def get_latest_fssh_news():
-    url = "https://www.fssh.khc.edu.tw/home"
+    # 鳳山高中專屬公告頁面
+    url = "https://www.fssh.khc.edu.tw/ischool/widget/site_news/main2.php?uid=WID_0_2_0f075596d6cfd282f38872677912f105e9857086&maximize=1&allbtn=0"
+    
     with sync_playwright() as p:
-        # 啟動瀏覽器
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
-        page.goto(url, timeout=60000)
-        
-        # 等待網頁裡的公告表格出現 (這裡給它 10 秒鐘讓 JavaScript 跑完)
-        page.wait_for_selector("table", timeout=10000)
-        
-        # 抓取第一筆公告的標題與連結
-        # 這裡使用 CSS Selector 語法直接定位
-        first_news = page.query_selector("table a")
-        
-        title = first_news.inner_text().strip() if first_news else None
-        link = first_news.get_attribute("href") if first_news else None
+        try:
+            page.goto(url, timeout=60000)
+            page.wait_for_load_state("networkidle")
+            
+            # 獲取所有連結標籤
+            links = page.query_selector_all("a")
+            
+            for link in links:
+                title = link.inner_text().strip()
+                href = link.get_attribute("href")
+                
+                # 排除不必要的按鈕文字
+                ignore_words = ["首頁", "上一頁", "下一頁", "第一頁", "最後一頁", "登入", "網站導覽", "more", "詳細內容"]
+                
+                # 標題篩選邏輯：長度 > 6 且不包含排除詞
+                if len(title) > 6 and not any(w in title for w in ignore_words):
+                    logging.info(f"成功找到目標：{title}")
+                    
+                    # 修正相對路徑連結
+                    if href and href.startswith("?"):
+                        href = "https://www.fssh.khc.edu.tw/ischool/widget/site_news/main2.php" + href
+                    elif href and href.startswith("/"):
+                        href = "https://www.fssh.khc.edu.tw" + href
+                        
+                    browser.close()
+                    return title, href
+        except Exception as e:
+            logging.error(f"抓取過程發生錯誤: {e}")
         
         browser.close()
-        return title, link
+        return None, None
 
 def main():
-    logging.info("正在啟動虛擬瀏覽器抓取公告...")
+    logging.info("正在執行瀏覽器爬蟲...")
     title, link = get_latest_fssh_news()
     
     if not title:
-        logging.error("抓取失敗，可能網頁結構改變。")
+        logging.warning("未能獲取公告，請檢查網站是否結構變更。")
         return
 
-    # 後續發送 Discord 的邏輯維持不變
+    # 檢查是否為新公告
     last_title = ""
     if os.path.exists(FILE_NAME):
         with open(FILE_NAME, "r", encoding="utf-8") as f:
             last_title = f.read().strip()
             
     if title != last_title:
-        logging.info(f"🎉 發現新公告：{title}")
+        logging.info(f"發現新公告：{title}")
         if DISCORD_WEBHOOK_URL:
-            requests.post(DISCORD_WEBHOOK_URL, json={"content": f"🔔 **鳳山高中最新公告**\n📌 {title}\n🔗 {link}"})
-        with open(FILE_NAME, "w", encoding="utf-8") as f:
-            f.write(title)
+            payload = {"content": f"🔔 **鳳山高中最新公告**\n📌 **{title}**\n🔗 {link}"}
+            requests.post(DISCORD_WEBHOOK_URL, json=payload)
+            with open(FILE_NAME, "w", encoding="utf-8") as f:
+                f.write(title)
+            logging.info("通知已發送至 Discord。")
+    else:
+        logging.info("無新公告。")
 
 if __name__ == "__main__":
     main()
