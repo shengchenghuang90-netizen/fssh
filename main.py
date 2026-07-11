@@ -1,168 +1,70 @@
+import os
 import requests
 from bs4 import BeautifulSoup
-import time
-import os
 import logging
-import storage
 
-# Configure logging
+# 設定日誌格式，讓 GitHub Actions 可以印出漂亮的執行紀錄
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# --- Configuration ---
-FSSH_URL = "https://www.fssh.khc.edu.tw/home"
+# 從 GitHub Secrets 自動讀取 Discord 網址
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
-LAST_TITLE_FILE_NAME = "last_title.txt"
+FILE_NAME = "last_title.txt"
 
-# Initialize GCS client
-storage_client = storage.Client()
-
-def get_last_title(bucket_name, file_name):
-    """Reads the last stored title from GCS."""
-    try:
-        bucket = storage_client.bucket(bucket_name)
-        blob = bucket.blob(file_name)
-        if blob.exists():
-            last_title = blob.download_as_text()
-            logging.info(f"Successfully retrieved last title from GCS: '{last_title}'")
-            return last_title.strip()
-        else:
-            logging.info(f"'{file_name}' not found in bucket '{bucket_name}'. Assuming no previous title.")
-            return None
-    except Exception as e:
-        logging.error(f"Error reading last title from GCS: {e}")
-        return None
-
-def save_last_title(bucket_name, file_name, title):
-    """Saves the current title to GCS."""
-    try:
-        bucket = storage_client.bucket(bucket_name)
-        blob = bucket.blob(file_name)
-        blob.upload_from_string(title)
-        logging.info(f"Successfully saved new title to GCS: '{title}'")
-        return True
-    except Exception as e:
-        logging.error(f"Error saving last title to GCS: {e}")
-        return False
-
-def send_discord_message(webhook_url, title, link):
-    """Sends a message to Discord via webhook."""
-    message_content = {
-        "content": f"鳳山高中新公告！\n**{title}**\n連結: {link}"
+def get_latest_fssh_news():
+    url = "https://www.fssh.khc.edu.tw/home"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
     }
     try:
-        response = requests.post(webhook_url, json=message_content)
-        response.raise_for_status()  # Raise an exception for HTTP errors
-        logging.info(f"Discord message sent successfully for title: '{title}'")
-        return True
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Error sending Discord message: {e}")
-        return False
-
-def scrape_fssh_news(url):
-    """Scrapes the FSSH website for the latest news title and link."""
-    try:
-        response = requests.get(url)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, 'html.parser')
-
-        # --- Adjust these selectors based on actual FSSH website structure ---
-        # This is a common pattern for news lists. You might need to inspect
-        # the FSSH website's HTML to find the correct selectors.
-        # Example: Look for a div with a specific class, then an <a> tag inside it.
+        response = requests.get(url, headers=headers, timeout=10)
+        response.encoding = 'utf-8'
+        soup = BeautifulSoup(response.text, "html.parser")
         
-        # Attempt 1: Look for common news list items
-        # This is a generic attempt. You might need to refine this.
-        # For example, if news items are in a specific <ul> or <div class="news-section">
-        
-        # Let's try to find the main content area first
-        main_content = soup.find('div', class_='main-content') or soup.find('main')
-        if not main_content:
-            logging.warning("Could not find main content area. Trying body directly.")
-            main_content = soup.body
-
-        # Look for common news/announcement patterns
-        # This is highly dependent on the website's structure.
-        # I'll try to find the first prominent link that might be a news item.
-        
-        # Common patterns: <a> tags within <li>, <p>, or directly under a news container
-        # Let's try to find links that are likely news items.
-        # This is a placeholder and will likely need adjustment.
-        
-        # A more robust approach would be to find a specific news section.
-        # For now, let's try to find the first link in a common news-like container.
-        
-        # Example: Find a div with class 'news-list' or 'announcements'
-        news_container = main_content.find('div', class_='news-list') or \
-                         main_content.find('ul', class_='announcements') or \
-                         main_content.find('div', class_='announcements') or \
-                         main_content.find('div', class_='news-section')
-
-        if news_container:
-            first_news_link = news_container.find('a')
-        else:
-            # Fallback: try to find any prominent link in the main content
-            first_news_link = main_content.find('a', href=True, string=lambda text: text and len(text) > 10) # Link with some text
-
-        if first_news_link and first_news_link.get_text(strip=True):
-            title = first_news_link.get_text(strip=True)
-            relative_link = first_news_link['href']
-            
-            # Construct full URL if relative
-            if relative_link.startswith('/'):
-                full_link = FSSH_URL.rstrip('/') + relative_link
-            else:
-                full_link = relative_link # Assume it's already a full URL or relative to current path
-
-            logging.info(f"Scraped latest news: Title='{title}', Link='{full_link}'")
-            return title, full_link
-        else:
-            logging.warning("Could not find a suitable news title and link on the page.")
-            return None, None
-
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Network error during scraping: {e}")
-        return None, None
+        # 精準解析鳳中網站表格結構，抓取第一條實質公告
+        for tr in soup.find_all("tr"):
+            a = tr.find("a")
+            if a and a.get("href"):
+                title = a.text.strip()
+                link = a["href"]
+                if len(title) > 5 and "home" not in link:
+                    if link.startswith("/"):
+                        link = "https://www.fssh.khc.edu.tw" + link
+                    return title, link
     except Exception as e:
-        logging.error(f"Error during scraping: {e}")
-        return None, None
+        logging.error(f"網頁抓取失敗: {e}")
+    return None, None
 
-def fssh_news_checker(request):
-    """
-    Triggers the FSSH news scraping and Discord notification process.
-    """
-    logging.info("FSSH News Checker function triggered.")
-
-    current_title, current_link = scrape_fssh_news(FSSH_URL)
-
-    if not current_title:
-        logging.error("Failed to scrape current news title. Exiting.")
-        return 'Failed to scrape news', 500
-
-    last_title = get_last_title(BUCKET_NAME, LAST_TITLE_FILE_NAME)
-
-    if current_title != last_title:
-        logging.info(f"New announcement detected! Old: '{last_title}', New: '{current_title}'")
-        if send_discord_message(DISCORD_WEBHOOK_URL, current_title, current_link):
-            save_last_title(BUCKET_NAME, LAST_TITLE_FILE_NAME, current_title)
-            return 'New announcement found and notified!', 200
-        else:
-            return 'New announcement found but failed to notify Discord.', 500
-    else:
-        logging.info("No new announcement found.")
-        return 'No new announcement.', 200
-
-# For local testing (optional)
-if __name__ == '__main__':
-    # This block will only run when the script is executed directly, not as a Cloud Function.
-    # You can simulate a request object if needed, or just call the core logic.
-    logging.info("Running fssh_news_checker locally for testing.")
-    # Simulate a dummy request object for local testing
-    class DummyRequest:
-        def get_json(self):
-            return None
-        def args(self):
-            return None
+def main():
+    logging.info("正在檢查鳳山高中最新公告...")
+    title, link = get_latest_fssh_news()
     
-    response, status_code = fssh_news_checker(DummyRequest())
-    logging.info(f"Local test finished with status: {status_code}, message: {response}")
-    print(f"Local test result: {response} (Status: {status_code})")
+    if not title:
+        logging.warning("無法獲取公告，稍後重試。")
+        return
+
+    last_title = ""
+    # 讀取本地端的紀錄檔
+    if os.path.exists(FILE_NAME):
+        with open(FILE_NAME, "r", encoding="utf-8") as f:
+            last_title = f.read().strip()
+            
+    # 判斷是否為新公告
+    if title != last_title:
+        logging.info(f"🎉 發現新公告：{title}，準備發送 Discord！")
+        
+        if DISCORD_WEBHOOK_URL:
+            payload = {
+                "content": f"🔔 **鳳山高中官網有新公告囉！**\n📌 **標題**：{title}\n🔗 **連結**：{link}"
+            }
+            requests.post(DISCORD_WEBHOOK_URL, json=payload)
+        else:
+            logging.error("發送失敗：讀取不到 Discord Webhook，請檢查 Secrets 設定！")
+            
+        # 將新標題寫入記憶檔案
+        with open(FILE_NAME, "w", encoding="utf-8") as f:
+            f.write(title)
+    else:
+        logging.info("目前沒有新公告，安全無事。")
+
+if __name__ == "__main__":
+    main()
