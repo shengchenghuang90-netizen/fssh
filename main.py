@@ -16,6 +16,9 @@ def get_latest_fssh_news():
     try:
         response = requests.get(url, headers=headers, timeout=10)
         response.encoding = 'utf-8'
+        logging.info(f"網頁狀態碼: {response.status_code}")
+        logging.info(f"網頁內容前 500 字: {response.text[:500]}")
+
         soup = BeautifulSoup(response.text, "html.parser")
         
         # 尋找表格內的超連結
