@@ -3,7 +3,7 @@ from bs4 import BeautifulSoup
 import time
 import os
 import logging
-
+import storage
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
