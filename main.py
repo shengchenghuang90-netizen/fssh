@@ -26,9 +26,15 @@ def get_latest_fssh_news():
             title = a.text.strip()
             link = a.get("href", "")
             
-            # 排除常見的選單按鈕，字數大於 10 通常就是真正的公告標題
-            ignore_words = ["首頁", "上一頁", "下一頁", "最後一頁", "登入", "國立鳳山高級中學", "RSS"]
-            if len(title) > 10 and not any(w in title for w in ignore_words):
+            # 👇 讓機器人把它看到的所有超連結都印在日誌裡 👇
+            if title:  # 只印出有文字的標題
+                logging.info(f"機器人看見連結 👉 標題:【{title}】")
+            
+            # 必須排除的系統按鈕清單，避免抓到網頁版面的切換按鈕
+            ignore_words = ["首頁", "上一頁", "下一頁", "第一頁", "最後一頁", "登入", "國立鳳山高級中學", "RSS", "無障礙", "更多"]
+            
+            # 🎯 條件大幅放寬：只要標題大於 2 個字，且不是系統按鈕，就認定是公告！
+            if len(title) > 2 and not any(w in title for w in ignore_words):
                 
                 # 處理 ischool 系統常見的 javascript 隱藏網址
                 if "javascript" in link or link == "#":
