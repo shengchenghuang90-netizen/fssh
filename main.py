@@ -21,28 +21,28 @@ def get_latest_fssh_news():
             page.goto(url, timeout=60000)
             page.wait_for_load_state("networkidle")
             
-            # 獲取所有連結標籤
             links = page.query_selector_all("a")
-            
             for link in links:
                 title = link.inner_text().strip()
                 href = link.get_attribute("href")
                 
-                # 排除不必要的按鈕文字
                 ignore_words = ["首頁", "上一頁", "下一頁", "第一頁", "最後一頁", "登入", "網站導覽", "more", "詳細內容"]
                 
-                # 標題篩選邏輯：長度 > 6 且不包含排除詞
                 if len(title) > 6 and not any(w in title for w in ignore_words):
                     logging.info(f"成功找到目標：{title}")
                     
-                    # 修正相對路徑連結
-                    if href and href.startswith("?"):
-                        href = "https://www.fssh.khc.edu.tw/ischool/widget/site_news/main2.php" + href
-                    elif href and href.startswith("/"):
-                        href = "https://www.fssh.khc.edu.tw" + href
+                    # 🎯 統一指向學校官網的邏輯
+                    if not href or "javascript" in href:
+                        final_link = "https://www.fssh.khc.edu.tw"
+                    elif href.startswith("?"):
+                        final_link = "https://www.fssh.khc.edu.tw/ischool/widget/site_news/main2.php" + href
+                    elif href.startswith("/"):
+                        final_link = "https://www.fssh.khc.edu.tw" + href
+                    else:
+                        final_link = href
                         
                     browser.close()
-                    return title, href
+                    return title, final_link
         except Exception as e:
             logging.error(f"抓取過程發生錯誤: {e}")
         
@@ -57,7 +57,7 @@ def main():
         logging.warning("未能獲取公告，請檢查網站是否結構變更。")
         return
 
-    # 檢查是否為新公告
+    # 檢查是否為新公告 (比對記憶檔)
     last_title = ""
     if os.path.exists(FILE_NAME):
         with open(FILE_NAME, "r", encoding="utf-8") as f:
@@ -66,13 +66,16 @@ def main():
     if title != last_title:
         logging.info(f"發現新公告：{title}")
         if DISCORD_WEBHOOK_URL:
+            # 傳送 Discord 訊息
             payload = {"content": f"🔔 **鳳山高中最新公告**\n📌 **{title}**\n🔗 {link}"}
             requests.post(DISCORD_WEBHOOK_URL, json=payload)
+            
+            # 更新記憶檔
             with open(FILE_NAME, "w", encoding="utf-8") as f:
                 f.write(title)
             logging.info("通知已發送至 Discord。")
     else:
-        logging.info("無新公告。")
+        logging.info("無新公告，不發送通知。")
 
 if __name__ == "__main__":
     main()
