@@ -1,9 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
-from google.cloud import storage
+import time
 import os
-import json
-import logging
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -11,7 +9,6 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # --- Configuration ---
 FSSH_URL = "https://www.fssh.khc.edu.tw/home"
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
-BUCKET_NAME = "gemini-cli-storage-581039"
 LAST_TITLE_FILE_NAME = "last_title.txt"
 
 # Initialize GCS client
@@ -129,7 +126,6 @@ def scrape_fssh_news(url):
 
 def fssh_news_checker(request):
     """
-    Google Cloud Function entry point.
     Triggers the FSSH news scraping and Discord notification process.
     """
     logging.info("FSSH News Checker function triggered.")
