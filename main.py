@@ -3,50 +3,33 @@ import requests
 from bs4 import BeautifulSoup
 import logging
 
-# 設定日誌格式，方便在 GitHub Actions 查看
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-# 從 GitHub Secrets 讀取 Discord Webhook 網址
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 FILE_NAME = "last_title.txt"
 
 def get_latest_fssh_news():
-    # 鳳山高中最新消息列表的專屬網址
-    url = "https://www.fssh.khc.edu.tw/ischool/widget/site_news/main2.php?uid=WID_0_2_0f075596d6cfd282f38872677912f105e9857086&maximize=1&allbtn=0"
+    # 🎯 終極殺招：直接抓取 ischool 系統的 RSS 純資料來源
+    url = "https://www.fssh.khc.edu.tw/ischool/widget/site_news/rss.php?uid=WID_0_2_0f075596d6cfd282f38872677912f105e9857086"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
     }
     try:
         response = requests.get(url, headers=headers, timeout=10)
         response.encoding = 'utf-8'
+        
+        # 讓 BeautifulSoup 去解析 RSS (XML格式) 資料
         soup = BeautifulSoup(response.text, "html.parser")
         
-        # 尋找網頁中所有的超連結 <a>
-        for a in soup.find_all("a"):
-            title = a.text.strip()
-            link = a.get("href", "")
+        # 在 RSS 裡，每一則公告都會被包在 <item> 標籤裡面
+        item = soup.find("item")
+        if item:
+            # 直接精準抓出 <title> (標題) 和 <link> (連結)
+            title = item.find("title").text.strip()
+            link = item.find("link").text.strip()
             
-            # 👇 讓機器人把它看到的所有超連結都印在日誌裡 👇
-            if title:  # 只印出有文字的標題
-                logging.info(f"機器人看見連結 👉 標題:【{title}】")
+            logging.info(f"成功透過 RSS 抓到最新公告：{title}")
+            return title, link
             
-            # 必須排除的系統按鈕清單，避免抓到網頁版面的切換按鈕
-            ignore_words = ["首頁", "上一頁", "下一頁", "第一頁", "最後一頁", "登入", "國立鳳山高級中學", "RSS", "無障礙", "更多"]
-            
-            # 🎯 條件大幅放寬：只要標題大於 2 個字，且不是系統按鈕，就認定是公告！
-            if len(title) > 2 and not any(w in title for w in ignore_words):
-                
-                # 處理 ischool 系統常見的 javascript 隱藏網址
-                if "javascript" in link or link == "#":
-                    # 直接把連結設定為這個公告列表的網址，方便手機點擊查看
-                    link = url
-                elif link.startswith("/"):
-                    link = "https://www.fssh.khc.edu.tw" + link
-                elif link.startswith("?"):
-                    link = "https://www.fssh.khc.edu.tw/ischool/widget/site_news/main2.php" + link
-                    
-                return title, link
-                
     except Exception as e:
         logging.error(f"網頁抓取失敗: {e}")
     return None, None
@@ -60,12 +43,10 @@ def main():
         return
 
     last_title = ""
-    # 讀取本地端的紀錄檔
     if os.path.exists(FILE_NAME):
         with open(FILE_NAME, "r", encoding="utf-8") as f:
             last_title = f.read().strip()
             
-    # 判斷是不是新的公告
     if title != last_title:
         logging.info(f"🎉 發現新公告：{title}，準備發送 Discord！")
         
@@ -76,13 +57,12 @@ def main():
             requests.post(DISCORD_WEBHOOK_URL, json=payload)
             logging.info("✅ Discord 通知發送成功！")
         else:
-            logging.error("❌ 發送失敗：讀取不到 Discord Webhook，請檢查 GitHub Secrets 設定！")
+            logging.error("❌ 發送失敗：讀取不到 Discord Webhook！")
             
-        # 將新的標題存起來，下次就不會重複發送
         with open(FILE_NAME, "w", encoding="utf-8") as f:
             f.write(title)
     else:
-        logging.info(f"目前沒有新公告 (最新的一筆仍是: {title[:10]}...)，安全無事。")
+        logging.info(f"目前沒有新公告，安全無事。")
 
 if __name__ == "__main__":
     main()
