@@ -18,6 +18,8 @@ def get_latest_fssh_news():
     try:
         response = requests.get(url, headers=headers, timeout=10)
         response.encoding = 'utf-8'
+        logging.info(f"網頁狀態碼: {response.status_code}")
+        logging.info(f"網頁內容前 200 字: {response.text[:200]}")
         soup = BeautifulSoup(response.text, "html.parser")
         
         # 精準解析鳳中網站表格結構，抓取第一條實質公告
