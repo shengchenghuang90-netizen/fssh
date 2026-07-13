@@ -2,7 +2,7 @@ name: FSSH News Scraper
 
 on:
   schedule:
-    - cron: '*/30 * * * *'
+    - cron: '*/15 * * * *'
   workflow_dispatch:
 
 # 🛑 關鍵修正：給予 GitHub Actions 讀寫儲存庫的權限
